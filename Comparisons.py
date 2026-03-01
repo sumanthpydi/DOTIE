@@ -32,7 +32,7 @@ if __name__=="__main__":
     gray_imgs = d_set['davis']['left']['image_raw']
     '''
     pos_changed_flag = False
-    DOTIE_scores, GSCE_scores, Kmeans_scores, meanshift_scores, DBSCAN_scores, GMM_scores = [], [], [], [], [], []
+    DOTIE_scores, GSCE_scores, Kmeans_scores, meanshift_scores, DBSCAN_scores, SPYDI_scores, GMM_scores = [], [], [], [], [], [], []
     
     # Convolutional layer (3x3)
     conv1 = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1, bias=False).to('cpu')
@@ -92,9 +92,21 @@ if __name__=="__main__":
         recovered_inputs_3chnl = convert_to_3chnl(recovered_inputs)
 
         # Compare techniques 
-        gray_image_3chnl, DOTIE_img, GSCE_img, Kmeans_img, meanshift_img, DBSCAN_img, GMM_img, DOTIE_sc, GSCE_sc, Kmeans_sc, meanshift_sc, DBSCAN_sc, GMM_sc = compare_all(evnt_frame_3chnl, gryimg_3chnl, recovered_inputs_3chnl, evnt_frame, eps_val=15, mindiagonalsquared=2300, gsce_neighbors=100, withIoU=True)
+        gray_image_3chnl, DOTIE_img, GSCE_img, Kmeans_img, meanshift_img, \
+DBSCAN_img, SPYDI_img, GMM_img, \
+DOTIE_sc, GSCE_sc, Kmeans_sc, meanshift_sc, \
+DBSCAN_sc, SPYDI_sc, GMM_sc = compare_all(
+    evnt_frame_3chnl,
+    gryimg_3chnl,
+    recovered_inputs_3chnl,
+    evnt_frame,
+    eps_val=15,
+    mindiagonalsquared=2300,
+    gsce_neighbors=100,
+    withIoU=True
+)
         vis_1a = np.concatenate((gray_image_3chnl, evnt_frame_3chnl), axis=1)
-        vis_1b = np.concatenate((DOTIE_img, DBSCAN_img), axis=1)
+        vis_1b = np.concatenate((DOTIE_img, DBSCAN_img, SPYDI_img), axis=1)
         vis_1 = np.concatenate((vis_1a, vis_1b), axis=1)
 
         vis_2a = np.concatenate((GSCE_img, Kmeans_img), axis=1)
