@@ -306,7 +306,7 @@ def getboundaries_other(event_input_3chnl, NEIGHBORS=100, eps_val=8, min_samples
             ev_box_meanshift += [(int(y_vals.min()), int(x_vals.min()), int(y_vals.max()), int(x_vals.max()))]
         
     ## DBSCAN directly
-    clustering_dbscan = DBSCAN(eps = eps_val, min_samples=min_samples_val).fit_predict(selected_events)
+    clustering_dbscan = DBSCAN(eps = eps_dbscan, min_samples=min_samples_val).fit_predict(selected_events)
     # Outlay these clusters on input_event_map
     no_labels_dbscan = clustering_dbscan.max()+1
     for lbl in range(no_labels_dbscan):
@@ -320,7 +320,7 @@ def getboundaries_other(event_input_3chnl, NEIGHBORS=100, eps_val=8, min_samples
         else: 
             ev_box_dbscan += [(int(y_vals.min()), int(x_vals.min()), int(y_vals.max()), int(x_vals.max()))]
         ## SPYDI DBSCAN
-    clustering_spydi = my_spydi_dbscan(selected_events, eps_val, min_samples_val)
+    clustering_spydi = my_spydi_dbscan(selected_events, eps_spydi, min_samples_val)
     no_labels_spydi = clustering_spydi.max() + 1
 
     for lbl in range(no_labels_spydi):
@@ -358,11 +358,25 @@ def getboundaries_other(event_input_3chnl, NEIGHBORS=100, eps_val=8, min_samples
    
     return ev_box_gsce, ev_box_kmeans, ev_box_meanshift, ev_box_dbscan, ev_box_spydi, ev_box_gmm
 
-def compare_all(evnt_inp_3chnl, gray_image_3chnl, isolated_evnts_3chnl, evnt_inp, eps_val=8, min_samples_val=10, mindiagonalsquared=100, gsce_neighbors=100, withIoU=True):
+def compare_all(model,
+                evnt_inp_3chnl,
+                gray_image_3chnl,
+                isolated_evnts_3chnl,
+                evnt_inp,
+                eps_dbscan=15,
+                eps_spydi=13,
+                min_samples_val=10,
+                mindiagonalsquared=100,
+                gsce_neighbors=100,
+                withIoU=True):
     # Load YOLO model 
-    model = models.load_model("models/config/yolov3.cfg", "models/weights/yolov3.weights")
-    yolo_boxes = detect.detect_image(model, np.array(gray_image_3chnl, dtype=np.uint8))
+    results = model(gray_image_3chnl)
+    detections = results.xyxy[0].cpu().numpy()
     
+    yolo_boxes = []
+    for det in detections:
+        x1, y1, x2, y2, conf, cls = det
+        yolo_boxes.append((int(x1), int(y1), int(x2), int(y2), conf, cls))
 
     # Initialize array for scores 
     DOTIE_sc, GSCE_sc, Kmeans_sc, meanshift_sc, DBSCAN_sc, SPYDI_sc, GMM_sc = [], [], [], [], [], [], []
