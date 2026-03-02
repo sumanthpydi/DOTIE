@@ -12,7 +12,6 @@ from sklearn.mixture import GaussianMixture
 from sklearn.cluster import estimate_bandwidth
 from sklearn.metrics import silhouette_score
 
-from pytorchyolo import detect, models
 from visual_helpers import convert_to_contrast_3chnl
 # ============================================================
 # SPYDI DBSCAN Implementation
