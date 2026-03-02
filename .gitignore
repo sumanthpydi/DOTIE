@@ -1,0 +1,15 @@
+.spyproject/*
+.vscode/
+__pycache__/
+*.pyc
+
+# datasets
+datasets/
+*.hdf5
+*.npy
+
+# weights
+models/weights/
+
+# results
+results/
