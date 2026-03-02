@@ -24,12 +24,10 @@ if __name__ == "__main__":
     # Load Data (QuickLoad Version)
     ############################################################
 
-    data_path = 'datasets/QuickLoads_mvsec.hdf5'
-    d_set = h5py.File(data_path, 'r')
-
-    evnts_enc = torch.tensor(d_set['event_data'])
-    gray_idx = np.array(d_set['grayind'])
-    gray_imgs = np.array(d_set['gray_img'])
+    evnts_enc = np.load('datasets/DOTIE_Encoding/count_data/500.npy')
+    gray_idx = np.load('datasets/DOTIE_Encoding/count_data/gray_ind.npy')
+    d_set = h5py.File('datasets/outdoor_day2_data.hdf5', 'r')
+    gray_imgs = d_set['davis']['left']['image_raw']
 
     ############################################################
     # Load YOLO ONCE (Torch Hub - Modern Stable)
