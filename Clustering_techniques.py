@@ -8,11 +8,7 @@ Helper codes for clustering
 import numpy as np
 import cv2
 
-from sklearn.neighbors import kneighbors_graph
-from sklearn.cluster import DBSCAN, SpectralClustering, KMeans, MeanShift
-from sklearn.mixture import GaussianMixture
-from sklearn.cluster import estimate_bandwidth
-from sklearn.metrics import silhouette_score
+from sklearn.cluster import DBSCAN
 
 from visual_helpers import convert_to_contrast_3chnl
 
@@ -25,6 +21,9 @@ NO_LABEL = 0
 # ============================================================
 
 def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
+
+    if selected_events.shape[0] == 0:
+        return np.array([])
 
     X = selected_events[:, :2].astype(int)
 
@@ -96,7 +95,7 @@ def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
 
 
 # ============================================================
-# IOU FUNCTIONS
+# IOU
 # ============================================================
 
 def _compute_IOU_(event_box, gt_box):
@@ -134,11 +133,14 @@ def get_boundaries_DOTIE(isolated_evnts_3chnl, eps_dbscan=15, min_samples_val=10
     Ximage_x, Ximage_y = np.where(isolated_evnts > 0)
 
     if len(Ximage_x) < min_samples_val:
-        return None
+        return []
 
     X = np.vstack((Ximage_x, Ximage_y)).T
 
-    clustering = DBSCAN(eps=eps_dbscan, min_samples=min_samples_val).fit_predict(X)
+    clustering = DBSCAN(
+        eps=eps_dbscan,
+        min_samples=min_samples_val
+    ).fit_predict(X)
 
     ev_box = []
 
@@ -148,6 +150,9 @@ def get_boundaries_DOTIE(isolated_evnts_3chnl, eps_dbscan=15, min_samples_val=10
             continue
 
         pts = X[clustering == lbl]
+
+        if pts.shape[0] == 0:
+            continue
 
         x_vals = pts[:, 0]
         y_vals = pts[:, 1]
@@ -182,11 +187,14 @@ def getboundaries_other(event_input_3chnl,
 
     selected_events = np.vstack((Ximage_x, Ximage_y)).T
 
+    # If no events exist in frame, skip clustering
+    if selected_events.shape[0] == 0:
+        return [], []
+
     ev_box_dbscan = []
     ev_box_spydi = []
 
     # DBSCAN
-
     clustering_dbscan = DBSCAN(
         eps=eps_dbscan,
         min_samples=min_samples_val
@@ -198,6 +206,9 @@ def getboundaries_other(event_input_3chnl,
             continue
 
         pts = selected_events[clustering_dbscan == lbl]
+
+        if pts.shape[0] == 0:
+            continue
 
         x_vals = pts[:, 0]
         y_vals = pts[:, 1]
@@ -214,7 +225,6 @@ def getboundaries_other(event_input_3chnl,
             ))
 
     # SPYDI
-
     clustering_spydi = my_spydi_dbscan(
         selected_events,
         eps_spydi,
@@ -227,6 +237,9 @@ def getboundaries_other(event_input_3chnl,
             continue
 
         pts = selected_events[clustering_spydi == lbl]
+
+        if pts.shape[0] == 0:
+            continue
 
         x_vals = pts[:, 0]
         y_vals = pts[:, 1]
@@ -268,10 +281,8 @@ def compare_all(model,
     for det in detections:
 
         x1, y1, x2, y2, conf, cls = det
-
         yolo_boxes.append((int(x1), int(y1), int(x2), int(y2), conf, cls))
 
-    DOTIE_sc = []
     DBSCAN_sc = []
     SPYDI_sc = []
 
@@ -279,13 +290,6 @@ def compare_all(model,
 
     DBSCAN_img = contrasted_inp.copy()
     SPYDI_img = contrasted_inp.copy()
-
-    DOTIE_bb = get_boundaries_DOTIE(
-        isolated_evnts_3chnl,
-        eps_dbscan,
-        min_samples_val,
-        mindiagonalsquared
-    )
 
     dbscan_boxes, spydi_boxes = getboundaries_other(
         isolated_evnts_3chnl,
@@ -297,16 +301,14 @@ def compare_all(model,
 
     for gt in yolo_boxes:
 
-        gt_box = gt
-
         best_db = 0
         best_sp = 0
 
         for box in dbscan_boxes:
-            best_db = max(best_db, _compute_IOU_(box, gt_box))
+            best_db = max(best_db, _compute_IOU_(box, gt))
 
         for box in spydi_boxes:
-            best_sp = max(best_sp, _compute_IOU_(box, gt_box))
+            best_sp = max(best_sp, _compute_IOU_(box, gt))
 
         DBSCAN_sc.append(best_db)
         SPYDI_sc.append(best_sp)
