@@ -3,15 +3,13 @@
 
 """
 Helper codes for clustering
+DBSCAN vs SPYDI comparison
 """
 
 import numpy as np
 import cv2
-
 from sklearn.cluster import DBSCAN
-
 from visual_helpers import convert_to_contrast_3chnl
-
 
 NO_LABEL = 0
 
@@ -123,56 +121,7 @@ def _compute_IOU_(event_box, gt_box):
 
 
 # ============================================================
-# DOTIE BOUNDARIES
-# ============================================================
-
-def get_boundaries_DOTIE(isolated_evnts_3chnl, eps_dbscan=15, min_samples_val=10, mindiagonalsquared=100):
-
-    isolated_evnts = isolated_evnts_3chnl[:, :, 0]
-
-    Ximage_x, Ximage_y = np.where(isolated_evnts > 0)
-
-    if len(Ximage_x) < min_samples_val:
-        return []
-
-    X = np.vstack((Ximage_x, Ximage_y)).T
-
-    clustering = DBSCAN(
-        eps=eps_dbscan,
-        min_samples=min_samples_val
-    ).fit_predict(X)
-
-    ev_box = []
-
-    for lbl in set(clustering):
-
-        if lbl == -1:
-            continue
-
-        pts = X[clustering == lbl]
-
-        if pts.shape[0] == 0:
-            continue
-
-        x_vals = pts[:, 0]
-        y_vals = pts[:, 1]
-
-        diagon = ((x_vals.max() - x_vals.min()) ** 2) + ((y_vals.max() - y_vals.min()) ** 2)
-
-        if diagon >= mindiagonalsquared:
-
-            ev_box.append((
-                int(y_vals.min()),
-                int(x_vals.min()),
-                int(y_vals.max()),
-                int(x_vals.max())
-            ))
-
-    return ev_box
-
-
-# ============================================================
-# OTHER CLUSTERING
+# GET CLUSTERS
 # ============================================================
 
 def getboundaries_other(event_input_3chnl,
@@ -187,14 +136,14 @@ def getboundaries_other(event_input_3chnl,
 
     selected_events = np.vstack((Ximage_x, Ximage_y)).T
 
-    # If no events exist in frame, skip clustering
     if selected_events.shape[0] == 0:
         return [], []
 
     ev_box_dbscan = []
     ev_box_spydi = []
 
-    # DBSCAN
+    # ---------------- DBSCAN ----------------
+
     clustering_dbscan = DBSCAN(
         eps=eps_dbscan,
         min_samples=min_samples_val
@@ -224,7 +173,8 @@ def getboundaries_other(event_input_3chnl,
                 int(x_vals.max())
             ))
 
-    # SPYDI
+    # ---------------- SPYDI ----------------
+
     clustering_spydi = my_spydi_dbscan(
         selected_events,
         eps_spydi,
@@ -259,7 +209,7 @@ def getboundaries_other(event_input_3chnl,
 
 
 # ============================================================
-# MAIN COMPARISON FUNCTION
+# MAIN COMPARISON
 # ============================================================
 
 def compare_all(model,
@@ -299,6 +249,28 @@ def compare_all(model,
         mindiagonalsquared
     )
 
+    # Draw YOLO boxes
+    for gt in yolo_boxes:
+
+        x1, y1, x2, y2, conf, cls = gt
+
+        cv2.rectangle(gray_image_3chnl, (x1, y1), (x2, y2), (0,255,255), 2)
+
+    # Draw DBSCAN boxes
+    for box in dbscan_boxes:
+
+        x1, y1, x2, y2 = box
+
+        cv2.rectangle(DBSCAN_img, (x1, y1), (x2, y2), (0,255,0), 2)
+
+    # Draw SPYDI boxes
+    for box in spydi_boxes:
+
+        x1, y1, x2, y2 = box
+
+        cv2.rectangle(SPYDI_img, (x1, y1), (x2, y2), (255,0,0), 2)
+
+    # Compute IoU
     for gt in yolo_boxes:
 
         best_db = 0
