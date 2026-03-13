@@ -93,9 +93,10 @@ if __name__ == "__main__":
         # DOTIE Processing
         ########################################################
 
-        inp_img = evnts_enc[:, :, curr_pos].float()
-        inp_img = inp_img[None, None, :]
-
+        # DOTIE framework
+        inp_img = torch.tensor(evnts_enc[:, :, curr_pos]).float()
+        inp_img = inp_img.unsqueeze(0).unsqueeze(0)
+        
         con_out = conv1(inp_img)
         spk_dir, mem_dir = snn1(con_out, mem_dir)
 
