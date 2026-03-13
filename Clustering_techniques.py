@@ -110,7 +110,10 @@ def _compute_IOU_(event_box, gt_box):
     xie = min(xee, xge)
     yie = min(yee, yge)
 
-    aib = max(0, (xie - xis)) * max(0, (yie - yis))
+    inter_w = max(0, xie - xis)
+    inter_h = max(0, yie - yis)
+
+    aib = inter_w * inter_h
 
     aub = aeb + agb - aib
 
@@ -121,7 +124,7 @@ def _compute_IOU_(event_box, gt_box):
 
 
 # ============================================================
-# GET CLUSTERS
+# CLUSTER BOUNDARY EXTRACTION
 # ============================================================
 
 def getboundaries_other(event_input_3chnl,
@@ -142,7 +145,9 @@ def getboundaries_other(event_input_3chnl,
     ev_box_dbscan = []
     ev_box_spydi = []
 
-    # ---------------- DBSCAN ----------------
+    # ------------------------------------------------
+    # DBSCAN
+    # ------------------------------------------------
 
     clustering_dbscan = DBSCAN(
         eps=eps_dbscan,
@@ -173,7 +178,9 @@ def getboundaries_other(event_input_3chnl,
                 int(x_vals.max())
             ))
 
-    # ---------------- SPYDI ----------------
+    # ------------------------------------------------
+    # SPYDI
+    # ------------------------------------------------
 
     clustering_spydi = my_spydi_dbscan(
         selected_events,
@@ -229,7 +236,6 @@ def compare_all(model,
     yolo_boxes = []
 
     for det in detections:
-
         x1, y1, x2, y2, conf, cls = det
         yolo_boxes.append((int(x1), int(y1), int(x2), int(y2), conf, cls))
 
@@ -249,28 +255,52 @@ def compare_all(model,
         mindiagonalsquared
     )
 
+    # ------------------------------------------------
     # Draw YOLO boxes
+    # ------------------------------------------------
+
     for gt in yolo_boxes:
 
         x1, y1, x2, y2, conf, cls = gt
 
-        cv2.rectangle(gray_image_3chnl, (x1, y1), (x2, y2), (0,255,255), 2)
+        cv2.rectangle(gray_image_3chnl,
+                      (x1, y1),
+                      (x2, y2),
+                      (0,255,255),
+                      2)
 
-    # Draw DBSCAN boxes
+    # ------------------------------------------------
+    # Draw DBSCAN clusters
+    # ------------------------------------------------
+
     for box in dbscan_boxes:
 
         x1, y1, x2, y2 = box
 
-        cv2.rectangle(DBSCAN_img, (x1, y1), (x2, y2), (0,255,0), 2)
+        cv2.rectangle(DBSCAN_img,
+                      (x1, y1),
+                      (x2, y2),
+                      (0,255,0),
+                      2)
 
-    # Draw SPYDI boxes
+    # ------------------------------------------------
+    # Draw SPYDI clusters
+    # ------------------------------------------------
+
     for box in spydi_boxes:
 
         x1, y1, x2, y2 = box
 
-        cv2.rectangle(SPYDI_img, (x1, y1), (x2, y2), (255,0,0), 2)
+        cv2.rectangle(SPYDI_img,
+                      (x1, y1),
+                      (x2, y2),
+                      (255,0,0),
+                      2)
 
+    # ------------------------------------------------
     # Compute IoU
+    # ------------------------------------------------
+
     for gt in yolo_boxes:
 
         best_db = 0
