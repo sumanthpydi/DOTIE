@@ -13,7 +13,8 @@ import torch.nn as nn
 import h5py
 import numpy as np
 import cv2
-
+import os
+os.makedirs("results", exist_ok=True)
 from visual_helpers import convert_to_contrast_3chnl, recover_fast_inputs, convert_to_3chnl
 from Clustering_techniques import compare_all
 
@@ -179,7 +180,13 @@ if __name__ == "__main__":
             (gray_image_3chnl, DBSCAN_img, SPYDI_img),
             axis=1
         )
-
+        
+        # Save images
+        cv2.imwrite(f"results/frame_{curr_pos}.png", visual)
+        cv2.imwrite(f"results/dbscan_{curr_pos}.png", DBSCAN_img)
+        cv2.imwrite(f"results/spydi_{curr_pos}.png", SPYDI_img)
+        
+        # Show preview
         cv2.imshow("DBSCAN vs SPYDI", cv2.cvtColor(visual, cv2.COLOR_BGR2RGB))
         cv2.waitKey(1)
 
