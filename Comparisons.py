@@ -88,16 +88,16 @@ if __name__ == "__main__":
     frame_list = []
 
 
+    total_frames = evnts_enc.shape[-1]
+    
+    start_frame = 300
+    end_frame = total_frames
+    
     print("\n====================================================")
-    print("Processing Frames 300–399")
+    print(f"Processing Frames {start_frame}–{end_frame-1}")
     print("====================================================")
-
-
-    ############################################################
-    # Main loop
-    ############################################################
-
-    for curr_pos in range(300,400):
+    
+    for curr_pos in range(start_frame, end_frame):
 
         print(f"\nFrame {curr_pos}")
 
