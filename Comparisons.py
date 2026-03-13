@@ -18,6 +18,7 @@ from Clustering_techniques import compare_all
 # Create output folders
 # ------------------------------------------------------------
 
+os.makedirs("results", exist_ok=True)
 os.makedirs("results/frames", exist_ok=True)
 
 
@@ -126,7 +127,6 @@ if __name__ == "__main__":
                 gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
                 indx_for_gray += 1
 
-
         gryimg_3chnl = convert_to_3chnl(gryimg)
 
 
@@ -139,14 +139,10 @@ if __name__ == "__main__":
         denom = visual_frame.max() - visual_frame.min()
 
         if denom == 0:
-
             evnt_frame = np.zeros_like(visual_frame, dtype=np.uint8)
-
         else:
-
             evnt_frame = ((visual_frame - visual_frame.min())
                           * (255 / denom)).astype('uint8')
-
 
         evnt_frame_3chnl = convert_to_contrast_3chnl(evnt_frame)
 
@@ -155,9 +151,10 @@ if __name__ == "__main__":
         # DOTIE recovered output
         ########################################################
 
-        spk_frame = torch.squeeze(spk_dir.detach()).cpu().numpy().astype(np.uint8)
-        spk_frame[spk_frame>0] = 255
+        spk_frame = torch.squeeze(spk_dir.detach()).cpu().numpy()
+        spk_frame = spk_frame.astype(np.uint8)
 
+        spk_frame[spk_frame>0] = 255
 
         recovered_inputs = recover_fast_inputs(
             evnt_frame,
@@ -189,18 +186,17 @@ if __name__ == "__main__":
         # IoU calculation
         ########################################################
 
-        db_frame_iou = max(DBSCAN_sc) if len(DBSCAN_sc)>0 else 0
-        sp_frame_iou = max(SPYDI_sc) if len(SPYDI_sc)>0 else 0
+        db_frame_iou = max(DBSCAN_sc) if DBSCAN_sc else 0
+        sp_frame_iou = max(SPYDI_sc) if SPYDI_sc else 0
 
         DBSCAN_all.append(db_frame_iou)
         SPYDI_all.append(sp_frame_iou)
-
 
         print(f"DBSCAN: {db_frame_iou:.4f} | SPYDI: {sp_frame_iou:.4f}")
 
 
         ########################################################
-        # Add IoU text to images
+        # Add IoU text
         ########################################################
 
         cv2.putText(DBSCAN_img,
@@ -229,8 +225,14 @@ if __name__ == "__main__":
 
 
         ########################################################
-        # Combine images
+        # Combine images safely
         ########################################################
+
+        h = min(gray_image_3chnl.shape[0], DBSCAN_img.shape[0], SPYDI_img.shape[0])
+
+        gray_image_3chnl = gray_image_3chnl[:h,:,:]
+        DBSCAN_img = DBSCAN_img[:h,:,:]
+        SPYDI_img = SPYDI_img[:h,:,:]
 
         combined = np.concatenate(
             (gray_image_3chnl, DBSCAN_img, SPYDI_img),
@@ -267,7 +269,11 @@ if __name__ == "__main__":
                             "SPYDI",
                             "DBSCAN")
 
+    df.loc["Mean"] = ["-", np.mean(DBSCAN_all), np.mean(SPYDI_all), "-"]
+
     df.to_csv("results/iou_comparison.csv", index=False)
+
+    print("\nIoU table saved → results/iou_comparison.csv")
 
 
     ############################################################
@@ -292,3 +298,5 @@ if __name__ == "__main__":
         print("Both perform equally.")
 
     print("====================================================")
+
+    cv2.destroyAllWindows()
