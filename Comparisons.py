@@ -127,6 +127,7 @@ if __name__ == "__main__":
                 gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
                 indx_for_gray += 1
 
+
         gryimg_3chnl = convert_to_3chnl(gryimg)
 
 
@@ -256,7 +257,7 @@ if __name__ == "__main__":
 
 
     ############################################################
-    # Save IoU table
+    # Create IoU comparison table
     ############################################################
 
     df = pd.DataFrame({
@@ -265,11 +266,47 @@ if __name__ == "__main__":
         "SPYDI_IoU": SPYDI_all
     })
 
-    df["Winner"] = np.where(df["SPYDI_IoU"] > df["DBSCAN_IoU"],
-                            "SPYDI",
-                            "DBSCAN")
 
-    df.loc["Mean"] = ["-", np.mean(DBSCAN_all), np.mean(SPYDI_all), "-"]
+    ############################################################
+    # Winner Logic with TIE detection
+    ############################################################
+
+    epsilon = 1e-6
+
+    df["Winner"] = np.where(
+        np.abs(df["SPYDI_IoU"] - df["DBSCAN_IoU"]) < epsilon,
+        "TIE",
+        np.where(
+            df["SPYDI_IoU"] > df["DBSCAN_IoU"],
+            "SPYDI",
+            "DBSCAN"
+        )
+    )
+
+
+    ############################################################
+    # Accuracy calculation (w.r.t DBSCAN baseline)
+    ############################################################
+
+    spydi_acc = []
+    dbscan_acc = []
+
+    for db, sp in zip(df["DBSCAN_IoU"], df["SPYDI_IoU"]):
+
+        if db == 0:
+            spydi_acc.append(0)
+            dbscan_acc.append(0)
+        else:
+            spydi_acc.append((sp/db)*100)
+            dbscan_acc.append(100)
+
+    df["SPYDI_Accuracy_%"] = np.round(spydi_acc,2)
+    df["DBSCAN_Accuracy_%"] = np.round(dbscan_acc,2)
+
+
+    ############################################################
+    # Save CSV
+    ############################################################
 
     df.to_csv("results/iou_comparison.csv", index=False)
 
