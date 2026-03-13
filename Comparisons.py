@@ -21,7 +21,7 @@ from Clustering_techniques import compare_all
 if __name__ == "__main__":
 
     ############################################################
-    # Load Data (QuickLoad Version)
+    # Load Data
     ############################################################
 
     evnts_enc = np.load('datasets/DOTIE_Encoding/count_data/500.npy')
@@ -30,7 +30,7 @@ if __name__ == "__main__":
     gray_imgs = d_set['davis']['left']['image_raw']
 
     ############################################################
-    # Load YOLO ONCE (Torch Hub - Modern Stable)
+    # Load YOLO once
     ############################################################
 
     print("Loading YOLO model (Torch Hub)...")
@@ -44,11 +44,10 @@ if __name__ == "__main__":
     model.eval()
 
     ############################################################
-    # Spiking Architecture
+    # Spiking architecture
     ############################################################
 
-    conv1 = nn.Conv2d(1, 1, kernel_size=3, stride=1,
-                      padding=1, bias=False).to('cpu')
+    conv1 = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1, bias=False)
 
     conv1.weight = torch.nn.Parameter(
         torch.ones_like(conv1.weight) * 0.15
@@ -61,7 +60,7 @@ if __name__ == "__main__":
     mem_dir = snn1.init_leaky()
 
     ############################################################
-    # Initialize grayscale index
+    # Initialize grayscale pointer
     ############################################################
 
     indx_for_gray = 0
@@ -71,7 +70,7 @@ if __name__ == "__main__":
     gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
 
     ############################################################
-    # IoU Storage
+    # IoU storage
     ############################################################
 
     DBSCAN_all = []
@@ -82,7 +81,7 @@ if __name__ == "__main__":
     print("====================================================")
 
     ############################################################
-    # Main Loop
+    # Main loop
     ############################################################
 
     for curr_pos in range(300, 400):
@@ -90,13 +89,14 @@ if __name__ == "__main__":
         print(f"\nFrame {curr_pos}")
 
         ########################################################
-        # DOTIE Processing
+        # Extract frame from encoded tensor
         ########################################################
 
-        # DOTIE framework
-        inp_img = torch.tensor(evnts_enc[:, :, curr_pos]).float()
-        inp_img = inp_img.unsqueeze(0).unsqueeze(0)
-        
+        frame = evnts_enc[:, :, :, curr_pos]
+        frame = np.sum(frame, axis=0)
+
+        inp_img = torch.tensor(frame).float().unsqueeze(0).unsqueeze(0)
+
         con_out = conv1(inp_img)
         spk_dir, mem_dir = snn1(con_out, mem_dir)
 
@@ -112,17 +112,18 @@ if __name__ == "__main__":
         gryimg_3chnl = convert_to_3chnl(gryimg)
 
         ########################################################
-        # Normalize input event frame safely
+        # Normalize event frame
         ########################################################
 
-        visual_frame = np.array(evnts_enc[:, :, curr_pos])
+        visual_frame = frame
 
         denom = visual_frame.max() - visual_frame.min()
+
         if denom == 0:
             evnt_frame = np.zeros_like(visual_frame, dtype=np.uint8)
         else:
-            evnt_frame = ((visual_frame - visual_frame.min())
-                          * (255 / denom)).astype('uint8')
+            evnt_frame = ((visual_frame - visual_frame.min()) *
+                          (255 / denom)).astype('uint8')
 
         evnt_frame_3chnl = convert_to_contrast_3chnl(evnt_frame)
 
@@ -146,25 +147,20 @@ if __name__ == "__main__":
         # Compare DBSCAN vs SPYDI
         ########################################################
 
-        gray_image_3chnl, DOTIE_img, GSCE_img, Kmeans_img, meanshift_img, \
-        DBSCAN_img, SPYDI_img, GMM_img, \
-        DOTIE_sc, GSCE_sc, Kmeans_sc, meanshift_sc, \
-        DBSCAN_sc, SPYDI_sc, GMM_sc = compare_all(
+        gray_image_3chnl, DBSCAN_img, SPYDI_img, DBSCAN_sc, SPYDI_sc = compare_all(
             model,
             evnt_frame_3chnl,
             gryimg_3chnl,
             recovered_inputs_3chnl,
             evnt_frame,
-            eps_dbscan=15,     # DBSCAN radius
-            eps_spydi=13,      # SPYDI Manhattan radius
+            eps_dbscan=15,
+            eps_spydi=13,
             min_samples_val=10,
-            mindiagonalsquared=2300,
-            gsce_neighbors=100,
-            withIoU=True
+            mindiagonalsquared=2300
         )
 
         ########################################################
-        # Store ONE IoU per frame (max IoU)
+        # Store frame IoU
         ########################################################
 
         db_frame_iou = max(DBSCAN_sc) if len(DBSCAN_sc) > 0 else 0
@@ -179,16 +175,16 @@ if __name__ == "__main__":
         # Visualization
         ########################################################
 
-        vis_1 = np.concatenate(
+        visual = np.concatenate(
             (gray_image_3chnl, DBSCAN_img, SPYDI_img),
             axis=1
         )
 
-        cv2.imshow("DBSCAN vs SPYDI", cv2.cvtColor(vis_1, cv2.COLOR_BGR2RGB))
+        cv2.imshow("DBSCAN vs SPYDI", cv2.cvtColor(visual, cv2.COLOR_BGR2RGB))
         cv2.waitKey(1)
 
     ############################################################
-    # Final Results
+    # Final results
     ############################################################
 
     print("\n====================================================")
