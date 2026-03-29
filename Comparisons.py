@@ -116,7 +116,7 @@ if __name__ == "__main__":
             recovered_inputs_3chnl,
             evnt_frame,
             eps_dbscan=15,
-            eps_spydi=2,
+            eps_spydi=13,
             min_samples_val=10,
             mindiagonalsquared=2300
         )
