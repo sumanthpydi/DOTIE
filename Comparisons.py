@@ -71,7 +71,7 @@ if __name__ == "__main__":
     ############################################################
 
     indx_for_gray = 0
-    while int(gray_idx[indx_for_gray]) < 300:
+    while int(gray_idx[indx_for_gray]) < 1900:
         indx_for_gray += 1
 
     gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
@@ -89,8 +89,8 @@ if __name__ == "__main__":
     # Frame Loop
     ############################################################
 
-    start_frame = 300
-    end_frame = min(evnts_enc.shape[-1], 350)   # safe start
+    start_frame = 1900
+    end_frame = min(evnts_enc.shape[-1], 1950)   # safe start
 
     results = []
 
