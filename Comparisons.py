@@ -78,13 +78,11 @@ if __name__ == "__main__":
 
 
     ############################################################
-    # PARAMETER GRID
+    # PARAMETER GRID (FULL GRID)
     ############################################################
 
     spydi_eps_list = [13,12,11,10]
-    spydi_minpts_list = [10,9,8,7]
-
-    results_table = []
+    spydi_minpts_list = [10,9,8]
 
 
     ############################################################
@@ -92,7 +90,9 @@ if __name__ == "__main__":
     ############################################################
 
     start_frame = 300
-    end_frame = min(evnts_enc.shape[-1], 400)   # start small
+    end_frame = min(evnts_enc.shape[-1], 350)   # safe start
+
+    results = []
 
     print("\n====================================================")
     print(f"Processing Frames {start_frame}–{end_frame-1}")
@@ -102,6 +102,8 @@ if __name__ == "__main__":
     for curr_pos in range(start_frame, end_frame):
 
         print(f"\nFrame {curr_pos}")
+
+        row = {"Frame": curr_pos}
 
         ########################################################
         # Extract frame
@@ -159,7 +161,7 @@ if __name__ == "__main__":
 
 
         ########################################################
-        # FIXED DBSCAN
+        # DBSCAN (FIXED)
         ########################################################
 
         _, _, _, DBSCAN_sc, _ = compare_all(
@@ -175,10 +177,11 @@ if __name__ == "__main__":
         )
 
         db_iou = max(DBSCAN_sc) if DBSCAN_sc else 0
+        row["DBSCAN"] = db_iou
 
 
         ########################################################
-        # SPYDI GRID SEARCH
+        # SPYDI GRID
         ########################################################
 
         for eps in spydi_eps_list:
@@ -198,54 +201,25 @@ if __name__ == "__main__":
 
                 sp_iou = max(SPYDI_sc) if SPYDI_sc else 0
 
-                results_table.append({
-                    "Frame": curr_pos,
-                    "SPYDI_eps": eps,
-                    "SPYDI_minpts": minpts,
-                    "DBSCAN_IoU": db_iou,
-                    "SPYDI_IoU": sp_iou
-                })
+                col_name = f"SPYDI_{eps}_{minpts}"
+                row[col_name] = sp_iou
 
-                print(f"eps={eps}, minpts={minpts} → SPYDI={sp_iou:.3f}, DBSCAN={db_iou:.3f}")
+                print(f"{col_name}: {sp_iou:.3f}")
+
+        results.append(row)
 
 
     ############################################################
-    # CREATE DATAFRAME
+    # CREATE DATAFRAME (WIDE FORMAT)
     ############################################################
 
-    df = pd.DataFrame(results_table)
-
-
-    ############################################################
-    # WINNER WITH TIE
-    ############################################################
-
-    epsilon = 1e-6
-
-    df["Winner"] = np.where(
-        np.abs(df["SPYDI_IoU"] - df["DBSCAN_IoU"]) < epsilon,
-        "TIE",
-        np.where(df["SPYDI_IoU"] > df["DBSCAN_IoU"], "SPYDI", "DBSCAN")
-    )
-
-
-    ############################################################
-    # ACCURACY %
-    ############################################################
-
-    df["SPYDI_Accuracy_%"] = np.where(
-        df["DBSCAN_IoU"] == 0,
-        0,
-        (df["SPYDI_IoU"] / df["DBSCAN_IoU"]) * 100
-    )
-
-    df["DBSCAN_Accuracy_%"] = 100
+    df = pd.DataFrame(results)
 
 
     ############################################################
     # SAVE CSV
     ############################################################
 
-    df.to_csv("results/spydi_grid_search.csv", index=False)
+    df.to_csv("results/full_grid_comparison.csv", index=False)
 
-    print("\nSaved → results/spydi_grid_search.csv")
+    print("\nSaved → results/full_grid_comparison.csv")
