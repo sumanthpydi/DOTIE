@@ -15,7 +15,7 @@ from Clustering_techniques import compare_all
 
 
 # ------------------------------------------------------------
-# Create output folders
+# Create output folder
 # ------------------------------------------------------------
 
 os.makedirs("results", exist_ok=True)
@@ -35,10 +35,10 @@ if __name__ == "__main__":
 
 
     ############################################################
-    # Load YOLO once
+    # Load YOLO
     ############################################################
 
-    print("Loading YOLO model (Torch Hub)...")
+    print("Loading YOLO model...")
 
     model = torch.hub.load(
         'ultralytics/yolov5',
@@ -50,7 +50,7 @@ if __name__ == "__main__":
 
 
     ############################################################
-    # Spiking architecture
+    # SNN setup
     ############################################################
 
     conv1 = nn.Conv2d(1,1,kernel_size=3,stride=1,padding=1,bias=False)
@@ -67,30 +67,35 @@ if __name__ == "__main__":
 
 
     ############################################################
-    # Initialize grayscale pointer
+    # FRAME RANGE (YOUR REQUIREMENT)
+    ############################################################
+
+    start_frame = 1900
+    end_frame = 1950
+
+
+    ############################################################
+    # CORRECT grayscale alignment (IMPORTANT FIX)
     ############################################################
 
     indx_for_gray = 0
-    while int(gray_idx[indx_for_gray]) < 1900:
+    while int(gray_idx[indx_for_gray]) < start_frame:
         indx_for_gray += 1
 
     gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
 
 
     ############################################################
-    # PARAMETER GRID (FULL GRID)
+    # PARAM GRID
     ############################################################
 
-    spydi_eps_list = [13,12,11,10]
-    spydi_minpts_list = [10,9,8]
+    spydi_eps_list = [13, 12, 11, 10]
+    spydi_minpts_list = [10, 9, 8]
 
 
     ############################################################
-    # Frame Loop
+    # STORAGE
     ############################################################
-
-    start_frame = 1900
-    end_frame = min(evnts_enc.shape[-1], 1950)   # safe start
 
     results = []
 
@@ -99,18 +104,28 @@ if __name__ == "__main__":
     print("====================================================")
 
 
+    ############################################################
+    # MAIN LOOP
+    ############################################################
+
     for curr_pos in range(start_frame, end_frame):
 
         print(f"\nFrame {curr_pos}")
 
         row = {"Frame": curr_pos}
 
+
         ########################################################
-        # Extract frame
+        # Extract frame (same as your pipeline)
         ########################################################
 
         frame = evnts_enc[:,:,:,curr_pos]
-        frame = np.sum(frame,axis=0)
+        frame = np.sum(frame, axis=0)
+
+
+        ########################################################
+        # SNN
+        ########################################################
 
         inp_img = torch.tensor(frame).float().unsqueeze(0).unsqueeze(0)
 
@@ -119,7 +134,7 @@ if __name__ == "__main__":
 
 
         ########################################################
-        # Update grayscale
+        # Update grayscale correctly
         ########################################################
 
         if indx_for_gray < len(gray_idx):
@@ -145,11 +160,11 @@ if __name__ == "__main__":
 
 
         ########################################################
-        # DOTIE output
+        # DOTIE recovered output
         ########################################################
 
         spk_frame = torch.squeeze(spk_dir.detach()).cpu().numpy().astype(np.uint8)
-        spk_frame[spk_frame>0] = 255
+        spk_frame[spk_frame > 0] = 255
 
         recovered_inputs = recover_fast_inputs(
             evnt_frame,
@@ -161,7 +176,7 @@ if __name__ == "__main__":
 
 
         ########################################################
-        # DBSCAN (FIXED)
+        # DBSCAN (FIXED BASELINE)
         ########################################################
 
         _, _, _, DBSCAN_sc, _ = compare_all(
@@ -171,13 +186,13 @@ if __name__ == "__main__":
             recovered_inputs_3chnl,
             evnt_frame,
             eps_dbscan=15,
-            eps_spydi=13,
+            eps_spydi=13,   # dummy
             min_samples_val=10,
             mindiagonalsquared=2300
         )
 
         db_iou = max(DBSCAN_sc) if DBSCAN_sc else 0
-        row["DBSCAN"] = db_iou
+        row["DBSCAN_15_10"] = db_iou
 
 
         ########################################################
@@ -201,25 +216,20 @@ if __name__ == "__main__":
 
                 sp_iou = max(SPYDI_sc) if SPYDI_sc else 0
 
-                col_name = f"SPYDI_{eps}_{minpts}"
-                row[col_name] = sp_iou
+                col = f"SPYDI_{eps}_{minpts}"
+                row[col] = sp_iou
 
-                print(f"{col_name}: {sp_iou:.3f}")
+                print(f"{col}: {sp_iou:.4f}")
 
         results.append(row)
 
 
     ############################################################
-    # CREATE DATAFRAME (WIDE FORMAT)
+    # SAVE RESULTS
     ############################################################
 
     df = pd.DataFrame(results)
 
+    df.to_csv("results/full_grid_1900_1950.csv", index=False)
 
-    ############################################################
-    # SAVE CSV
-    ############################################################
-
-    df.to_csv("results/full_grid_comparison.csv", index=False)
-
-    print("\nSaved → results/full_grid_comparison.csv")
+    print("\nSaved → results/full_grid_1900_1950.csv")
