@@ -1,235 +1,304 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import snntorch as snn
-import torch
-import torch.nn as nn
-import h5py
+"""
+Helper codes for clustering
+DBSCAN vs SPYDI comparison
+"""
+
 import numpy as np
 import cv2
-import os
-import pandas as pd
+from sklearn.cluster import DBSCAN
+from visual_helpers import convert_to_contrast_3chnl
 
-from visual_helpers import convert_to_contrast_3chnl, recover_fast_inputs, convert_to_3chnl
-from Clustering_techniques import compare_all
-
-
-# ------------------------------------------------------------
-# Create output folder
-# ------------------------------------------------------------
-
-os.makedirs("results", exist_ok=True)
+NO_LABEL = 0
 
 
-if __name__ == "__main__":
+# ============================================================
+# SPYDI DBSCAN
+# ============================================================
 
-    ############################################################
-    # Load Data
-    ############################################################
+def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
 
-    evnts_enc = np.load('datasets/DOTIE_Encoding/count_data/500.npy')
-    gray_idx = np.load('datasets/DOTIE_Encoding/count_data/gray_ind.npy')
+    if selected_events.shape[0] == 0:
+        return np.array([])
 
-    d_set = h5py.File('datasets/outdoor_day2_data.hdf5', 'r')
-    gray_imgs = d_set['davis']['left']['image_raw']
+    # selected_events is (x, y)
+    X = selected_events[:, :2].astype(int)
+
+    # Correct dimensions
+    W = int(X[:, 0].max()) + 1   # x → width
+    H = int(X[:, 1].max()) + 1   # y → height
+
+    binary_img = np.zeros((H, W), dtype=np.uint8)
+
+    # Correct indexing
+    for x, y in X:
+        binary_img[y, x] = 1
+
+    label_img = np.zeros((H, W), dtype=np.int32)
+    core_map = np.zeros((H, W), dtype=np.uint8)
+
+    cluster_counter = 1
+
+    def neighbor_count(y, x):
+
+        y0 = max(0, y - eps_val)
+        y1 = min(H, y + eps_val + 1)
+
+        x0 = max(0, x - eps_val)
+        x1 = min(W, x + eps_val + 1)
+
+        return np.sum(binary_img[y0:y1, x0:x1])
+
+    for y in range(H):
+        for x in range(W):
+
+            if binary_img[y, x] == 0:
+                continue
+
+            cnt = neighbor_count(y, x)
+
+            is_core = cnt >= min_samples_val
+            core_map[y, x] = 1 if is_core else 0
+
+            if not is_core:
+                continue
+
+            min_neighbor_label = None
+
+            for yy in range(max(0, y - eps_val), min(H, y + eps_val + 1)):
+                for xx in range(max(0, x - eps_val), min(W, x + eps_val + 1)):
+
+                    if core_map[yy, xx]:
+
+                        lbl = label_img[yy, xx]
+
+                        if lbl != NO_LABEL:
+                            if min_neighbor_label is None or lbl < min_neighbor_label:
+                                min_neighbor_label = lbl
+
+            if min_neighbor_label is not None:
+                label_img[y, x] = min_neighbor_label
+            else:
+                label_img[y, x] = cluster_counter
+                cluster_counter += 1
+
+    labels = np.zeros(len(X), dtype=np.int32)
+
+    for i, (x, y) in enumerate(X):
+        labels[i] = label_img[y, x]
+
+    labels[labels == 0] = -1
+
+    return labels
 
 
-    ############################################################
-    # Load YOLO
-    ############################################################
+# ============================================================
+# IOU
+# ============================================================
 
-    print("Loading YOLO model...")
+def _compute_IOU_(event_box, gt_box):
 
-    model = torch.hub.load(
-        'ultralytics/yolov5',
-        'yolov5s',
-        pretrained=True
+    xes, yes, xee, yee = event_box
+    xgs, ygs, xge, yge, _, _ = gt_box
+
+    # robust area (avoid zero area)
+    aeb = max(1, (xee - xes)) * max(1, (yee - yes))
+    agb = max(1, (xge - xgs)) * max(1, (yge - ygs))
+
+    xis = max(xes, xgs)
+    yis = max(yes, ygs)
+
+    xie = min(xee, xge)
+    yie = min(yee, yge)
+
+    inter_w = max(0, xie - xis)
+    inter_h = max(0, yie - yis)
+
+    aib = inter_w * inter_h
+
+    aub = aeb + agb - aib
+
+    if aub == 0:
+        return 0
+
+    return aib / aub
+
+
+# ============================================================
+# CLUSTER BOUNDARY EXTRACTION
+# ============================================================
+
+def getboundaries_other(event_input_3chnl,
+                        eps_dbscan=15,
+                        eps_spydi=13,
+                        min_samples_val=10,
+                        mindiagonalsquared=100):
+
+    image_array = event_input_3chnl[:, :, 0]
+
+    Ximage_y, Ximage_x = np.where(image_array > 0)
+
+    # Convert to (x, y)
+    selected_events = np.vstack((Ximage_x, Ximage_y)).T
+
+    if selected_events.shape[0] == 0:
+        return [], []
+
+    ev_box_dbscan = []
+    ev_box_spydi = []
+
+    # ------------------------------------------------
+    # DBSCAN
+    # ------------------------------------------------
+
+    clustering_dbscan = DBSCAN(
+        eps=eps_dbscan,
+        min_samples=min_samples_val
+    ).fit_predict(selected_events)
+
+    for lbl in set(clustering_dbscan):
+
+        if lbl == -1:
+            continue
+
+        pts = selected_events[clustering_dbscan == lbl]
+
+        if pts.shape[0] == 0:
+            continue
+
+        x_vals = pts[:, 0]
+        y_vals = pts[:, 1]
+
+        diagon = ((x_vals.max() - x_vals.min()) ** 2) + ((y_vals.max() - y_vals.min()) ** 2)
+
+        if diagon >= mindiagonalsquared:
+
+            ev_box_dbscan.append((
+                int(x_vals.min()),
+                int(y_vals.min()),
+                int(x_vals.max()),
+                int(y_vals.max())
+            ))
+
+    # ------------------------------------------------
+    # SPYDI
+    # ------------------------------------------------
+
+    clustering_spydi = my_spydi_dbscan(
+        selected_events,
+        eps_spydi,
+        min_samples_val
     )
 
-    model.eval()
+    for lbl in set(clustering_spydi):
+
+        if lbl == -1:
+            continue
+
+        pts = selected_events[clustering_spydi == lbl]
+
+        if pts.shape[0] == 0:
+            continue
+
+        x_vals = pts[:, 0]
+        y_vals = pts[:, 1]
+
+        diagon = ((x_vals.max() - x_vals.min()) ** 2) + ((y_vals.max() - y_vals.min()) ** 2)
+
+        if diagon >= mindiagonalsquared:
+
+            ev_box_spydi.append((
+                int(x_vals.min()),
+                int(y_vals.min()),
+                int(x_vals.max()),
+                int(y_vals.max())
+            ))
+
+    return ev_box_dbscan, ev_box_spydi
 
 
-    ############################################################
-    # SNN setup
-    ############################################################
+# ============================================================
+# MAIN COMPARISON
+# ============================================================
 
-    conv1 = nn.Conv2d(1,1,kernel_size=3,stride=1,padding=1,bias=False)
+def compare_all(model,
+                evnt_inp_3chnl,
+                gray_image_3chnl,
+                isolated_evnts_3chnl,
+                evnt_inp,
+                eps_dbscan=15,
+                eps_spydi=13,
+                min_samples_val=10,
+                mindiagonalsquared=100):
 
-    conv1.weight = torch.nn.Parameter(
-        torch.ones_like(conv1.weight) * 0.15
+    results = model(gray_image_3chnl)
+
+    detections = results.xyxy[0].cpu().numpy()
+
+    yolo_boxes = []
+
+    for det in detections:
+        x1, y1, x2, y2, conf, cls = det
+        yolo_boxes.append((int(x1), int(y1), int(x2), int(y2), conf, cls))
+
+    DBSCAN_sc = []
+    SPYDI_sc = []
+
+    contrasted_inp = convert_to_contrast_3chnl(evnt_inp)
+
+    DBSCAN_img = contrasted_inp.copy()
+    SPYDI_img = contrasted_inp.copy()
+
+    dbscan_boxes, spydi_boxes = getboundaries_other(
+        isolated_evnts_3chnl,
+        eps_dbscan,
+        eps_spydi,
+        min_samples_val,
+        mindiagonalsquared
     )
 
-    with torch.no_grad():
-        conv1.weight[0,0,1,1] = 0.2
+    # ------------------------------------------------
+    # Draw YOLO boxes
+    # ------------------------------------------------
 
-    snn1 = snn.Leaky(beta=0.3, reset_mechanism="subtract")
-    mem_dir = snn1.init_leaky()
+    for gt in yolo_boxes:
+        x1, y1, x2, y2, conf, cls = gt
+        cv2.rectangle(gray_image_3chnl, (x1, y1), (x2, y2), (0,255,255), 2)
 
+    # ------------------------------------------------
+    # Draw DBSCAN clusters
+    # ------------------------------------------------
 
-    ############################################################
-    # FRAME RANGE (YOUR REQUIREMENT)
-    ############################################################
+    for box in dbscan_boxes:
+        x1, y1, x2, y2 = box
+        cv2.rectangle(DBSCAN_img, (x1, y1), (x2, y2), (0,255,0), 2)
 
-    start_frame = 1900
-    end_frame = 1950
+    # ------------------------------------------------
+    # Draw SPYDI clusters
+    # ------------------------------------------------
 
+    for box in spydi_boxes:
+        x1, y1, x2, y2 = box
+        cv2.rectangle(SPYDI_img, (x1, y1), (x2, y2), (255,0,0), 2)
 
-    ############################################################
-    # CORRECT grayscale alignment (IMPORTANT FIX)
-    ############################################################
+    # ------------------------------------------------
+    # Compute IoU
+    # ------------------------------------------------
 
-    indx_for_gray = 0
-    while int(gray_idx[indx_for_gray]) < start_frame:
-        indx_for_gray += 1
+    for gt in yolo_boxes:
 
-    gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
+        best_db = 0
+        best_sp = 0
 
+        for box in dbscan_boxes:
+            best_db = max(best_db, _compute_IOU_(box, gt))
 
-    ############################################################
-    # PARAM GRID
-    ############################################################
+        for box in spydi_boxes:
+            best_sp = max(best_sp, _compute_IOU_(box, gt))
 
-    spydi_eps_list = [13, 12, 11, 10]
-    spydi_minpts_list = [10, 9, 8]
+        DBSCAN_sc.append(best_db)
+        SPYDI_sc.append(best_sp)
 
-
-    ############################################################
-    # STORAGE
-    ############################################################
-
-    results = []
-
-    print("\n====================================================")
-    print(f"Processing Frames {start_frame}–{end_frame-1}")
-    print("====================================================")
-
-
-    ############################################################
-    # MAIN LOOP
-    ############################################################
-
-    for curr_pos in range(start_frame, end_frame):
-
-        print(f"\nFrame {curr_pos}")
-
-        row = {"Frame": curr_pos}
-
-
-        ########################################################
-        # Extract frame (same as your pipeline)
-        ########################################################
-
-        frame = evnts_enc[:,:,:,curr_pos]
-        frame = np.sum(frame, axis=0)
-
-
-        ########################################################
-        # SNN
-        ########################################################
-
-        inp_img = torch.tensor(frame).float().unsqueeze(0).unsqueeze(0)
-
-        con_out = conv1(inp_img)
-        spk_dir, mem_dir = snn1(con_out, mem_dir)
-
-
-        ########################################################
-        # Update grayscale correctly
-        ########################################################
-
-        if indx_for_gray < len(gray_idx):
-            if int(gray_idx[indx_for_gray]) == curr_pos:
-                gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
-                indx_for_gray += 1
-
-        gryimg_3chnl = convert_to_3chnl(gryimg)
-
-
-        ########################################################
-        # Normalize event frame
-        ########################################################
-
-        denom = frame.max() - frame.min()
-
-        if denom == 0:
-            evnt_frame = np.zeros_like(frame, dtype=np.uint8)
-        else:
-            evnt_frame = ((frame - frame.min()) * (255/denom)).astype(np.uint8)
-
-        evnt_frame_3chnl = convert_to_contrast_3chnl(evnt_frame)
-
-
-        ########################################################
-        # DOTIE recovered output
-        ########################################################
-
-        spk_frame = torch.squeeze(spk_dir.detach()).cpu().numpy().astype(np.uint8)
-        spk_frame[spk_frame > 0] = 255
-
-        recovered_inputs = recover_fast_inputs(
-            evnt_frame,
-            spk_frame,
-            recovery_neighborhood=12
-        )
-
-        recovered_inputs_3chnl = convert_to_3chnl(recovered_inputs)
-
-
-        ########################################################
-        # DBSCAN (FIXED BASELINE)
-        ########################################################
-
-        _, _, _, DBSCAN_sc, _ = compare_all(
-            model,
-            evnt_frame_3chnl,
-            gryimg_3chnl,
-            recovered_inputs_3chnl,
-            evnt_frame,
-            eps_dbscan=15,
-            eps_spydi=13,   # dummy
-            min_samples_val=10,
-            mindiagonalsquared=2300
-        )
-
-        db_iou = max(DBSCAN_sc) if DBSCAN_sc else 0
-        row["DBSCAN_15_10"] = db_iou
-
-
-        ########################################################
-        # SPYDI GRID
-        ########################################################
-
-        for eps in spydi_eps_list:
-            for minpts in spydi_minpts_list:
-
-                _, _, _, _, SPYDI_sc = compare_all(
-                    model,
-                    evnt_frame_3chnl,
-                    gryimg_3chnl,
-                    recovered_inputs_3chnl,
-                    evnt_frame,
-                    eps_dbscan=15,
-                    eps_spydi=eps,
-                    min_samples_val=minpts,
-                    mindiagonalsquared=2300
-                )
-
-                sp_iou = max(SPYDI_sc) if SPYDI_sc else 0
-
-                col = f"SPYDI_{eps}_{minpts}"
-                row[col] = sp_iou
-
-                print(f"{col}: {sp_iou:.4f}")
-
-        results.append(row)
-
-
-    ############################################################
-    # SAVE RESULTS
-    ############################################################
-
-    df = pd.DataFrame(results)
-
-    df.to_csv("results/full_grid_1900_1950.csv", index=False)
-
-    print("\nSaved → results/full_grid_1900_1950.csv")
+    return gray_image_3chnl, DBSCAN_img, SPYDI_img, DBSCAN_sc, SPYDI_sc
