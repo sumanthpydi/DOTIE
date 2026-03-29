@@ -19,7 +19,6 @@ from Clustering_techniques import compare_all
 # ------------------------------------------------------------
 
 os.makedirs("results", exist_ok=True)
-os.makedirs("results/frames", exist_ok=True)
 
 
 if __name__ == "__main__":
@@ -72,7 +71,6 @@ if __name__ == "__main__":
     ############################################################
 
     indx_for_gray = 0
-
     while int(gray_idx[indx_for_gray]) < 300:
         indx_for_gray += 1
 
@@ -80,28 +78,30 @@ if __name__ == "__main__":
 
 
     ############################################################
-    # IoU storage
+    # PARAMETER GRID
     ############################################################
 
-    DBSCAN_all = []
-    SPYDI_all = []
-    frame_list = []
+    spydi_eps_list = [13,12,11,10]
+    spydi_minpts_list = [10,9,8,7]
+
+    results_table = []
 
 
-    total_frames = evnts_enc.shape[-1]
-    
+    ############################################################
+    # Frame Loop
+    ############################################################
+
     start_frame = 300
-    end_frame = total_frames
-    
+    end_frame = min(evnts_enc.shape[-1], 400)   # start small
+
     print("\n====================================================")
     print(f"Processing Frames {start_frame}–{end_frame-1}")
     print("====================================================")
-    
+
+
     for curr_pos in range(start_frame, end_frame):
 
         print(f"\nFrame {curr_pos}")
-
-        frame_list.append(curr_pos)
 
         ########################################################
         # Extract frame
@@ -121,12 +121,9 @@ if __name__ == "__main__":
         ########################################################
 
         if indx_for_gray < len(gray_idx):
-
             if int(gray_idx[indx_for_gray]) == curr_pos:
-
                 gryimg = np.array(gray_imgs[indx_for_gray], dtype=np.uint8)
                 indx_for_gray += 1
-
 
         gryimg_3chnl = convert_to_3chnl(gryimg)
 
@@ -135,26 +132,21 @@ if __name__ == "__main__":
         # Normalize event frame
         ########################################################
 
-        visual_frame = frame
-
-        denom = visual_frame.max() - visual_frame.min()
+        denom = frame.max() - frame.min()
 
         if denom == 0:
-            evnt_frame = np.zeros_like(visual_frame, dtype=np.uint8)
+            evnt_frame = np.zeros_like(frame, dtype=np.uint8)
         else:
-            evnt_frame = ((visual_frame - visual_frame.min())
-                          * (255 / denom)).astype('uint8')
+            evnt_frame = ((frame - frame.min()) * (255/denom)).astype(np.uint8)
 
         evnt_frame_3chnl = convert_to_contrast_3chnl(evnt_frame)
 
 
         ########################################################
-        # DOTIE recovered output
+        # DOTIE output
         ########################################################
 
-        spk_frame = torch.squeeze(spk_dir.detach()).cpu().numpy()
-        spk_frame = spk_frame.astype(np.uint8)
-
+        spk_frame = torch.squeeze(spk_dir.detach()).cpu().numpy().astype(np.uint8)
         spk_frame[spk_frame>0] = 255
 
         recovered_inputs = recover_fast_inputs(
@@ -167,10 +159,10 @@ if __name__ == "__main__":
 
 
         ########################################################
-        # Clustering comparison
+        # FIXED DBSCAN
         ########################################################
 
-        gray_image_3chnl, DBSCAN_img, SPYDI_img, DBSCAN_sc, SPYDI_sc = compare_all(
+        _, _, _, DBSCAN_sc, _ = compare_all(
             model,
             evnt_frame_3chnl,
             gryimg_3chnl,
@@ -182,93 +174,50 @@ if __name__ == "__main__":
             mindiagonalsquared=2300
         )
 
-
-        ########################################################
-        # IoU calculation
-        ########################################################
-
-        db_frame_iou = max(DBSCAN_sc) if DBSCAN_sc else 0
-        sp_frame_iou = max(SPYDI_sc) if SPYDI_sc else 0
-
-        DBSCAN_all.append(db_frame_iou)
-        SPYDI_all.append(sp_frame_iou)
-
-        print(f"DBSCAN: {db_frame_iou:.4f} | SPYDI: {sp_frame_iou:.4f}")
+        db_iou = max(DBSCAN_sc) if DBSCAN_sc else 0
 
 
         ########################################################
-        # Add IoU text
+        # SPYDI GRID SEARCH
         ########################################################
 
-        cv2.putText(DBSCAN_img,
-                    f"DBSCAN IoU: {db_frame_iou:.3f}",
-                    (10,30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0,0,255),
-                    2)
+        for eps in spydi_eps_list:
+            for minpts in spydi_minpts_list:
 
-        cv2.putText(SPYDI_img,
-                    f"SPYDI IoU: {sp_frame_iou:.3f}",
-                    (10,30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0,0,255),
-                    2)
+                _, _, _, _, SPYDI_sc = compare_all(
+                    model,
+                    evnt_frame_3chnl,
+                    gryimg_3chnl,
+                    recovered_inputs_3chnl,
+                    evnt_frame,
+                    eps_dbscan=15,
+                    eps_spydi=eps,
+                    min_samples_val=minpts,
+                    mindiagonalsquared=2300
+                )
 
-        cv2.putText(gray_image_3chnl,
-                    "Original + YOLO",
-                    (10,30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (255,0,0),
-                    2)
+                sp_iou = max(SPYDI_sc) if SPYDI_sc else 0
 
+                results_table.append({
+                    "Frame": curr_pos,
+                    "SPYDI_eps": eps,
+                    "SPYDI_minpts": minpts,
+                    "DBSCAN_IoU": db_iou,
+                    "SPYDI_IoU": sp_iou
+                })
 
-        ########################################################
-        # Combine images safely
-        ########################################################
-
-        h = min(gray_image_3chnl.shape[0], DBSCAN_img.shape[0], SPYDI_img.shape[0])
-
-        gray_image_3chnl = gray_image_3chnl[:h,:,:]
-        DBSCAN_img = DBSCAN_img[:h,:,:]
-        SPYDI_img = SPYDI_img[:h,:,:]
-
-        combined = np.concatenate(
-            (gray_image_3chnl, DBSCAN_img, SPYDI_img),
-            axis=1
-        )
-
-
-        ########################################################
-        # Save frame
-        ########################################################
-
-        cv2.imwrite(f"results/frames/frame_{curr_pos}.png", combined)
-
-
-        ########################################################
-        # Preview
-        ########################################################
-
-        cv2.imshow("DOTIE Clustering Comparison", combined)
-        cv2.waitKey(1)
+                print(f"eps={eps}, minpts={minpts} → SPYDI={sp_iou:.3f}, DBSCAN={db_iou:.3f}")
 
 
     ############################################################
-    # Create IoU comparison table
+    # CREATE DATAFRAME
     ############################################################
 
-    df = pd.DataFrame({
-        "Frame": frame_list,
-        "DBSCAN_IoU": DBSCAN_all,
-        "SPYDI_IoU": SPYDI_all
-    })
+    df = pd.DataFrame(results_table)
 
 
     ############################################################
-    # Winner Logic with TIE detection
+    # WINNER WITH TIE
     ############################################################
 
     epsilon = 1e-6
@@ -276,64 +225,27 @@ if __name__ == "__main__":
     df["Winner"] = np.where(
         np.abs(df["SPYDI_IoU"] - df["DBSCAN_IoU"]) < epsilon,
         "TIE",
-        np.where(
-            df["SPYDI_IoU"] > df["DBSCAN_IoU"],
-            "SPYDI",
-            "DBSCAN"
-        )
+        np.where(df["SPYDI_IoU"] > df["DBSCAN_IoU"], "SPYDI", "DBSCAN")
     )
 
 
     ############################################################
-    # Accuracy calculation (w.r.t DBSCAN baseline)
+    # ACCURACY %
     ############################################################
 
-    spydi_acc = []
-    dbscan_acc = []
+    df["SPYDI_Accuracy_%"] = np.where(
+        df["DBSCAN_IoU"] == 0,
+        0,
+        (df["SPYDI_IoU"] / df["DBSCAN_IoU"]) * 100
+    )
 
-    for db, sp in zip(df["DBSCAN_IoU"], df["SPYDI_IoU"]):
-
-        if db == 0:
-            spydi_acc.append(0)
-            dbscan_acc.append(0)
-        else:
-            spydi_acc.append((sp/db)*100)
-            dbscan_acc.append(100)
-
-    df["SPYDI_Accuracy_%"] = np.round(spydi_acc,2)
-    df["DBSCAN_Accuracy_%"] = np.round(dbscan_acc,2)
+    df["DBSCAN_Accuracy_%"] = 100
 
 
     ############################################################
-    # Save CSV
+    # SAVE CSV
     ############################################################
 
-    df.to_csv("results/iou_comparison.csv", index=False)
+    df.to_csv("results/spydi_grid_search.csv", index=False)
 
-    print("\nIoU table saved → results/iou_comparison.csv")
-
-
-    ############################################################
-    # Final summary
-    ############################################################
-
-    print("\n====================================================")
-    print("Final Results (Frames 300–399)")
-    print("----------------------------------------------------")
-
-    db_mean = np.mean(DBSCAN_all)
-    sp_mean = np.mean(SPYDI_all)
-
-    print(f"DBSCAN Mean IoU: {db_mean:.4f}")
-    print(f"SPYDI   Mean IoU: {sp_mean:.4f}")
-
-    if sp_mean > db_mean:
-        print("SPYDI performs better.")
-    elif db_mean > sp_mean:
-        print("DBSCAN performs better.")
-    else:
-        print("Both perform equally.")
-
-    print("====================================================")
-
-    cv2.destroyAllWindows()
+    print("\nSaved → results/spydi_grid_search.csv")
