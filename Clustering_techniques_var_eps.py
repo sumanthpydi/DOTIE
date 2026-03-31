@@ -11,6 +11,7 @@ NO_LABEL = 0
 # ============================================================
 
 def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
+
     if selected_events.shape[0] == 0:
         return np.array([])
 
@@ -36,10 +37,12 @@ def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
 
     for y in range(H):
         for x in range(W):
+
             if binary_img[y, x] == 0:
                 continue
 
             cnt = neighbor_count(y, x)
+
             if cnt < min_samples_val:
                 continue
 
@@ -49,8 +52,10 @@ def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
 
             for yy in range(max(0, y - eps_val), min(H, y + eps_val + 1)):
                 for xx in range(max(0, x - eps_val), min(W, x + eps_val + 1)):
+
                     if core_map[yy, xx]:
                         lbl = label_img[yy, xx]
+
                         if lbl != NO_LABEL:
                             if min_label is None or lbl < min_label:
                                 min_label = lbl
@@ -62,10 +67,12 @@ def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
                 cluster_counter += 1
 
     labels = np.zeros(len(X), dtype=np.int32)
+
     for i, (x, y) in enumerate(X):
         labels[i] = label_img[x, y]
 
     labels[labels == 0] = -1
+
     return labels
 
 
@@ -74,21 +81,23 @@ def my_spydi_dbscan(selected_events, eps_val, min_samples_val):
 # ============================================================
 
 def compute_iou(box1, box2):
-    x1,y1,x2,y2 = box1
-    gx1,gy1,gx2,gy2,_,_ = box2
+
+    x1, y1, x2, y2 = box1
+    gx1, gy1, gx2, gy2, _, _ = box2
 
     ix1 = max(x1, gx1)
     iy1 = max(y1, gy1)
     ix2 = min(x2, gx2)
     iy2 = min(y2, gy2)
 
-    inter = max(0, ix2-ix1) * max(0, iy2-iy1)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
 
-    a1 = (x2-x1)*(y2-y1)
-    a2 = (gx2-gx1)*(gy2-gy1)
+    a1 = (x2 - x1) * (y2 - y1)
+    a2 = (gx2 - gx1) * (gy2 - gy1)
 
     union = a1 + a2 - inter
-    return inter/union if union > 0 else 0
+
+    return inter / union if union > 0 else 0
 
 
 # ============================================================
@@ -96,26 +105,30 @@ def compute_iou(box1, box2):
 # ============================================================
 
 def get_boxes(events, labels, mindiagonal=2300):
+
     boxes = []
 
     for lbl in set(labels):
+
         if lbl == -1:
             continue
 
         pts = events[labels == lbl]
-        x = pts[:,0]
-        y = pts[:,1]
 
-        diag = (x.max()-x.min())**2 + (y.max()-y.min())**2
+        x = pts[:, 0]
+        y = pts[:, 1]
+
+        diag = (x.max() - x.min())**2 + (y.max() - y.min())**2
 
         if diag >= mindiagonal:
             boxes.append((int(y.min()), int(x.min()),
                           int(y.max()), int(x.max())))
+
     return boxes
 
 
 # ============================================================
-# MAIN
+# MAIN FUNCTION
 # ============================================================
 
 def compare_all(model, evnt_frame_3chnl, gray_img_3chnl,
@@ -124,14 +137,15 @@ def compare_all(model, evnt_frame_3chnl, gray_img_3chnl,
     results = model(gray_img_3chnl)
     detections = results.xyxy[0].cpu().numpy()
 
-    yolo_boxes = [(int(x1),int(y1),int(x2),int(y2),conf,cls)
-                  for x1,y1,x2,y2,conf,cls in detections]
+    yolo_boxes = [(int(x1), int(y1), int(x2), int(y2), conf, cls)
+                  for x1, y1, x2, y2, conf, cls in detections]
 
-    img = recovered_3chnl[:,:,0]
+    img = recovered_3chnl[:, :, 0]
+
     Xx, Xy = np.where(img > 0)
 
     if len(Xx) == 0:
-        return 0, 0
+        return 0, 0, [], []
 
     events = np.vstack((Xx, Xy)).T
 
@@ -143,10 +157,16 @@ def compare_all(model, evnt_frame_3chnl, gray_img_3chnl,
     sp_labels = my_spydi_dbscan(events, eps_sp, min_sp)
     sp_boxes = get_boxes(events, sp_labels)
 
-    best_db, best_sp = 0, 0
+    # IoU LISTS
+    db_iou_list = []
+    sp_iou_list = []
 
-    for gt in yolo_boxes:
-        best_db = max(best_db, max([compute_iou(b, gt) for b in db_boxes] or [0]))
-        best_sp = max(best_sp, max([compute_iou(b, gt) for b in sp_boxes] or [0]))
+    for box in db_boxes:
+        ious = [compute_iou(box, gt) for gt in yolo_boxes]
+        db_iou_list.append(max(ious) if ious else 0)
 
-    return best_db, best_sp
+    for box in sp_boxes:
+        ious = [compute_iou(box, gt) for gt in yolo_boxes]
+        sp_iou_list.append(max(ious) if ious else 0)
+
+    return len(db_boxes), len(sp_boxes), db_iou_list, sp_iou_list
