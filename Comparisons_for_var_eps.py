@@ -7,6 +7,9 @@ import snntorch as snn
 import numpy as np
 import h5py
 import pandas as pd
+import warnings
+
+warnings.filterwarnings("ignore")
 
 from visual_helpers import recover_fast_inputs, convert_to_3chnl, convert_to_contrast_3chnl
 from Clustering_techniques_var_eps import compare_all
@@ -36,13 +39,12 @@ if __name__ == "__main__":
     mem = snn1.init_leaky()
 
     idx = 0
-    while int(gray_idx[idx]) < 1900:
+    while int(gray_idx[idx]) < 1940:
         idx += 1
 
-    # 🔥 FIX: initialize gry
     gry = np.array(gray_imgs[idx], dtype=np.uint8)
 
-    for frame_id in range(1900, 2001):
+    for frame_id in range(1940, 1951):
 
         print("Frame:", frame_id)
 
@@ -50,11 +52,9 @@ if __name__ == "__main__":
 
         inp = torch.tensor(frame).float().unsqueeze(0).unsqueeze(0)
 
-        # 🔥 FIX: no grad
         with torch.no_grad():
             spk, mem = snn1(conv1(inp), mem)
 
-        # update grayscale safely
         if idx < len(gray_idx):
             if int(gray_idx[idx]) == frame_id:
                 gry = np.array(gray_imgs[idx], dtype=np.uint8)
@@ -63,10 +63,7 @@ if __name__ == "__main__":
         gry_3 = convert_to_3chnl(gry)
 
         denom = frame.max() - frame.min()
-        if denom == 0:
-            evnt = np.zeros_like(frame)
-        else:
-            evnt = ((frame - frame.min())*(255/denom)).astype('uint8')
+        evnt = ((frame - frame.min())*(255/denom)).astype('uint8') if denom != 0 else np.zeros_like(frame)
 
         spk_frame = torch.squeeze(spk).cpu().numpy().astype(np.uint8)
         spk_frame[spk_frame > 0] = 255
@@ -82,7 +79,7 @@ if __name__ == "__main__":
         for eps in eps_list:
             for minpts in minpts_list:
 
-                db, sp = compare_all(
+                db_count, sp_count, db_iou_list, sp_iou_list = compare_all(
                     model,
                     ev3,
                     gry_3,
@@ -95,11 +92,15 @@ if __name__ == "__main__":
                     "Frame": frame_id,
                     "eps_spydi": eps,
                     "minpts_spydi": minpts,
-                    "DBSCAN_IoU": db,
-                    "SPYDI_IoU": sp
+
+                    "DBSCAN_box_count": db_count,
+                    "SPYDI_box_count": sp_count,
+
+                    "DBSCAN_IoUs": str(db_iou_list),
+                    "SPYDI_IoUs": str(sp_iou_list)
                 })
 
     df = pd.DataFrame(results)
-    df.to_csv("results/spydi_sweep_1900_2000.csv", index=False)
+    df.to_csv("results/spydi_boxes_1940_1950.csv", index=False)
 
-    print("\nSaved → results/spydi_sweep_1900_2000.csv")
+    print("\nSaved → results/spydi_boxes_1940_1950.csv")
