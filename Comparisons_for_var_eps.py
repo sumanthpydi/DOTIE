@@ -49,9 +49,12 @@ if __name__ == "__main__":
         frame = evnts_enc[0,:,:,frame_id] + evnts_enc[1,:,:,frame_id]
 
         inp = torch.tensor(frame).float().unsqueeze(0).unsqueeze(0)
-        spk, mem = snn1(conv1(inp), mem)
 
-        # 🔥 FIX: safe update
+        # 🔥 FIX: no grad
+        with torch.no_grad():
+            spk, mem = snn1(conv1(inp), mem)
+
+        # update grayscale safely
         if idx < len(gray_idx):
             if int(gray_idx[idx]) == frame_id:
                 gry = np.array(gray_imgs[idx], dtype=np.uint8)
@@ -65,7 +68,7 @@ if __name__ == "__main__":
         else:
             evnt = ((frame - frame.min())*(255/denom)).astype('uint8')
 
-        spk_frame = torch.squeeze(spk).numpy().astype(np.uint8)
+        spk_frame = torch.squeeze(spk).cpu().numpy().astype(np.uint8)
         spk_frame[spk_frame > 0] = 255
 
         rec = recover_fast_inputs(evnt, spk_frame, recovery_neighborhood=18)
