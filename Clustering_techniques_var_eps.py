@@ -135,11 +135,11 @@ def compare_all(model, evnt_frame_3chnl, gray_img_3chnl,
 
     events = np.vstack((Xx, Xy)).T
 
-    # DBSCAN fixed
+    # DBSCAN FIXED
     db_labels = DBSCAN(eps=15, min_samples=10).fit_predict(events)
     db_boxes = get_boxes(events, db_labels)
 
-    # SPYDI variable
+    # SPYDI VARIABLE
     sp_labels = my_spydi_dbscan(events, eps_sp, min_sp)
     sp_boxes = get_boxes(events, sp_labels)
 
