@@ -9,7 +9,7 @@ import h5py
 import pandas as pd
 
 from visual_helpers import recover_fast_inputs, convert_to_3chnl, convert_to_contrast_3chnl
-from clustering_techniques_var_eps import compare_all
+from Clustering_techniques_var_eps import compare_all
 
 eps_list = [13,12,11,10,9,8,7,6]
 minpts_list = [10,9,8,7,6,5]
