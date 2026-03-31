@@ -77,22 +77,22 @@ def compute_iou(box1, box2):
     x1,y1,x2,y2 = box1
     gx1,gy1,gx2,gy2,_,_ = box2
 
-    inter_x1 = max(x1, gx1)
-    inter_y1 = max(y1, gy1)
-    inter_x2 = min(x2, gx2)
-    inter_y2 = min(y2, gy2)
+    ix1 = max(x1, gx1)
+    iy1 = max(y1, gy1)
+    ix2 = min(x2, gx2)
+    iy2 = min(y2, gy2)
 
-    inter_area = max(0, inter_x2-inter_x1) * max(0, inter_y2-inter_y1)
+    inter = max(0, ix2-ix1) * max(0, iy2-iy1)
 
-    area1 = (x2-x1)*(y2-y1)
-    area2 = (gx2-gx1)*(gy2-gy1)
+    a1 = (x2-x1)*(y2-y1)
+    a2 = (gx2-gx1)*(gy2-gy1)
 
-    union = area1 + area2 - inter_area
-    return inter_area/union if union > 0 else 0
+    union = a1 + a2 - inter
+    return inter/union if union > 0 else 0
 
 
 # ============================================================
-# BOUNDARY EXTRACTION
+# BOX EXTRACTION
 # ============================================================
 
 def get_boxes(events, labels, mindiagonal=2300):
@@ -115,7 +115,7 @@ def get_boxes(events, labels, mindiagonal=2300):
 
 
 # ============================================================
-# MAIN COMPARISON
+# MAIN
 # ============================================================
 
 def compare_all(model, evnt_frame_3chnl, gray_img_3chnl,
@@ -131,7 +131,7 @@ def compare_all(model, evnt_frame_3chnl, gray_img_3chnl,
     Xx, Xy = np.where(img > 0)
 
     if len(Xx) == 0:
-        return 0,0
+        return 0, 0
 
     events = np.vstack((Xx, Xy)).T
 
@@ -143,7 +143,7 @@ def compare_all(model, evnt_frame_3chnl, gray_img_3chnl,
     sp_labels = my_spydi_dbscan(events, eps_sp, min_sp)
     sp_boxes = get_boxes(events, sp_labels)
 
-    best_db, best_sp = 0,0
+    best_db, best_sp = 0, 0
 
     for gt in yolo_boxes:
         best_db = max(best_db, max([compute_iou(b, gt) for b in db_boxes] or [0]))
